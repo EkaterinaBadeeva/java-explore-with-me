@@ -4,8 +4,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.practicum.explore_with_me.event.dto.EventFullDto;
-import ru.practicum.explore_with_me.event.mapper.EventMapper;
 import ru.practicum.explore_with_me.event.model.Event;
 import ru.practicum.explore_with_me.event.service.EventService;
 import ru.practicum.explore_with_me.exceptions.ConflictException;
@@ -21,7 +19,6 @@ import ru.practicum.explore_with_me.user.service.UserService;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 import static ru.practicum.explore_with_me.event.model.EventState.PUBLISHED;
 import static ru.practicum.explore_with_me.request.model.ParticipationRequestState.*;
@@ -51,7 +48,7 @@ public class ParticipationRequestServiceImpl implements ParticipationRequestServ
         request.setEvent(event);
         request.setRequester(user);
 
-        if (event.getRequestModeration().equals(false)) {
+        if (event.getRequestModeration().equals(false) || event.getParticipantLimit() == 0) {
             request.setState(CONFIRMED);
         } else {
             request.setState(PENDING);
@@ -104,7 +101,7 @@ public class ParticipationRequestServiceImpl implements ParticipationRequestServ
             request.setCreated(requestDto.getCreated());
             request.setEvent(event);
             request.setRequester(user);
-            request.setState(requestDto.getState());
+            request.setState(requestDto.getStatus());
 
             requests.add(request);
         }
@@ -119,10 +116,11 @@ public class ParticipationRequestServiceImpl implements ParticipationRequestServ
     }
 
     private void checkExistRequest(Long userId, Long eventId) {
-        Optional<ParticipationRequest> requestOpt = participationRequestRepository
-                .findByRequesterIdAndEventId(userId, eventId);
+        //Optional<ParticipationRequest> requestOpt = participationRequestRepository
+         //       .findByRequesterIdAndEventId(userId, eventId);
 
-        if (requestOpt.isPresent()) {
+        //if (requestOpt.isPresent()) {
+        if (participationRequestRepository.existsByRequesterIdAndEventId(userId, eventId)) {
             log.warn("Запрос от пользователя с id = {} на участие в событии c id = {} уже существует", userId, eventId);
             throw new ConflictException("Запрос от пользователя с id = " + userId + " на участие в событии c id = "
                     + eventId + " уже существует");
@@ -135,14 +133,14 @@ public class ParticipationRequestServiceImpl implements ParticipationRequestServ
 
     private Event findAndCheckEvent(Long eventId, Long userId) {
 
-       EventFullDto eventDto = eventService.findEventById(eventId);
+       Event event = eventService.findEventById(eventId);
 
-        if ((eventDto.getInitiator().getId()).equals(userId)) {
+        if ((event.getInitiator().getId()).equals(userId)) {
             log.warn("Инициатор события не может добавить запрос на участие в своём событии");
             throw new ConflictException("Инициатор события не может добавить запрос на участие в своём событии");
         }
 
-        if (!eventDto.getState().equals(PUBLISHED)) {
+        if (!event.getState().equals(PUBLISHED)) {
             log.warn("Нельзя участвовать в неопубликованном событии.");
             throw new ConflictException("Нельзя участвовать в неопубликованном событии");
         }
@@ -150,11 +148,11 @@ public class ParticipationRequestServiceImpl implements ParticipationRequestServ
         List<ParticipationRequest> requestsConfirmed = participationRequestRepository.findAllByEventIdAndState(eventId, CONFIRMED);
         int amountRequests = requestsConfirmed.size();
 
-        if (eventDto.getParticipantLimit() > 0 && amountRequests >= eventDto.getParticipantLimit()) {
+        if (event.getParticipantLimit() > 0 && amountRequests >= event.getParticipantLimit()) {
             log.warn("У события достигнут лимит запросов на участие.");
             throw new ConflictException("У события достигнут лимит запросов на участие");
         }
 
-        return EventMapper.mapToEvent(eventDto);
+        return event;
     }
 }

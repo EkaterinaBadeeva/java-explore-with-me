@@ -1,7 +1,6 @@
 package ru.practicum.explore_with_me.compilation.dto;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
@@ -19,8 +18,8 @@ public class NewCompilationDto {
     List<Long> events;
 
     //pinned — закреплена ли подборка на главной странице сайта
-    @NotNull
-    Boolean pinned;
+    @Builder.Default
+    Boolean pinned = false;
 
     //title — заголовок подборки
     @NotBlank(message = "Заголовок подборки должен быть указан")

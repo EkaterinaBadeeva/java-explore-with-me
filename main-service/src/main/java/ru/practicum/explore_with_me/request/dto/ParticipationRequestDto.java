@@ -27,5 +27,5 @@ public class ParticipationRequestDto {
     Long requester;
 
     //state — статус заявки
-    ParticipationRequestState state;
+    ParticipationRequestState status;
 }

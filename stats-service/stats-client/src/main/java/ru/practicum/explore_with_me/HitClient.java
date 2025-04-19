@@ -22,15 +22,15 @@ public class HitClient {
         this.uriBase = uriBase;
     }
 
-    public ResponseEntity<Object> saveHit(HitDto hitDto) {
+    public HitDto saveHit(HitDto hitDto) {
         String uri = UriComponentsBuilder.fromHttpUrl(uriBase)
                 .path("/hit")
                 .toUriString();
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        HttpEntity<Object> entity = new HttpEntity<>(hitDto, headers);
+        HttpEntity<HitDto> entity = new HttpEntity<>(hitDto, headers);
 
-        ResponseEntity<Object> response = rest.exchange(uri, HttpMethod.POST, entity, Object.class);
+        ResponseEntity<HitDto> response = rest.exchange(uri, HttpMethod.POST, entity, HitDto.class);
 
         if (response.getStatusCode().is4xxClientError()) {
             throw new ClientException("Ошибка при  сохранение информации о том, " +
@@ -41,10 +41,10 @@ public class HitClient {
                     "что на uri конкретного сервиса был отправлен запрос пользователем");
         }
 
-        return response;
+        return response.getBody();
     }
 
-    public ResponseEntity<Object> getStats(LocalDateTime start, LocalDateTime end,
+    public List<ViewStatsDto> getStats(LocalDateTime start, LocalDateTime end,
                                            List<String> uris, boolean unique) {
         String uri = UriComponentsBuilder.fromHttpUrl(uriBase)
                 .path("/stats")
@@ -53,8 +53,8 @@ public class HitClient {
                 .queryParam("uris", uris)
                 .queryParam("unique", unique)
                 .toUriString();
-        ResponseEntity<Object> response = rest.exchange(uri, HttpMethod.GET,
-                null, new ParameterizedTypeReference<>() {
+        ResponseEntity<List<ViewStatsDto>> response = rest.exchange(uri, HttpMethod.GET,
+                null, new ParameterizedTypeReference<List<ViewStatsDto>>() {
                 });
 
         if (response.getStatusCode().is4xxClientError()) {
@@ -64,7 +64,7 @@ public class HitClient {
             throw new ClientException("Ошибка при получении статистики по посещениям");
         }
 
-        return response;
+        return response.getBody();
     }
 }
 

@@ -7,7 +7,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.practicum.explore_with_me.exceptions.CommonException;
+import ru.practicum.explore_with_me.exceptions.ConflictException;
 import ru.practicum.explore_with_me.exceptions.NotFoundException;
 import ru.practicum.explore_with_me.exceptions.ValidationException;
 import ru.practicum.explore_with_me.user.dao.UserRepository;
@@ -84,7 +84,7 @@ public class UserServiceImpl implements UserService {
         for (User us : userRepository.findAll()) {
             if (us.getEmail().equals(user.getEmail())) {
                 log.warn("Пользователь уже существует.");
-                throw new CommonException("Пользователь с email = " + user.getEmail() + " уже существует");
+                throw new ConflictException("Пользователь с email = " + user.getEmail() + " уже существует");
             }
         }
     }

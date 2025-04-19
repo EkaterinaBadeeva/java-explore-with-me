@@ -12,7 +12,9 @@ import ru.practicum.explore_with_me.category.dto.CategoryDto;
 import ru.practicum.explore_with_me.category.dto.NewCategoryDto;
 import ru.practicum.explore_with_me.category.mapper.CategoryMapper;
 import ru.practicum.explore_with_me.category.model.Category;
+import ru.practicum.explore_with_me.event.service.EventService;
 import ru.practicum.explore_with_me.exceptions.CommonException;
+import ru.practicum.explore_with_me.exceptions.ConflictException;
 import ru.practicum.explore_with_me.exceptions.NotFoundException;
 import ru.practicum.explore_with_me.exceptions.ValidationException;
 
@@ -24,6 +26,7 @@ import java.util.List;
 @Transactional(readOnly = true)
 public class CategoryServiceImpl implements CategoryService {
     private final CategoryRepository categoryRepository;
+    private final EventService eventService;
 
     @Override
     @Transactional
@@ -81,6 +84,13 @@ public class CategoryServiceImpl implements CategoryService {
 
         checkId(catId);
 
+        categoryRepository.findById(catId).orElseThrow(
+                () -> new NotFoundException("Категория с Id " + catId + " не найдена"));
+
+        if (!eventService.findEventsByCategoryId(catId).isEmpty()) {
+            throw new ConflictException("Существуют события, связанные с категорией");
+        }
+
         categoryRepository.deleteById(catId);
     }
 
@@ -92,11 +102,9 @@ public class CategoryServiceImpl implements CategoryService {
     }
 
     private void checkName(Category category) {
-        for (Category cat : categoryRepository.findAll()) {
-            if (cat.getName().equals(category.getName())) {
-                log.warn("Категория уже существует.");
-                throw new CommonException("Категория с name = " + category.getName() + " уже существует");
-            }
+        if (categoryRepository.existsByNameAndIdNot(category.getName(), category.getId())) {
+            log.warn("Категория уже существует.");
+            throw new CommonException("Категория с name = " + category.getName() + " уже существует");
         }
     }
 
@@ -109,6 +117,6 @@ public class CategoryServiceImpl implements CategoryService {
 
     private Category findCategoryById(Long catId) {
         return categoryRepository.findById(catId)
-                .orElseThrow(() -> new NotFoundException("Категория не найдена"));
+                .orElseThrow(() -> new NotFoundException("Категория с Id " + catId + " не найдена"));
     }
 }

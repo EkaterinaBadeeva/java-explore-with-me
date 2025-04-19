@@ -43,7 +43,7 @@ public class CompilationServiceImpl implements CompilationService {
         if (eventIds == null) {
             compilation.setEvents(events);
         } else {
-            events = (Set<Event>) eventService.findEventsByIds(eventIds);
+            events = Set.copyOf(eventService.findEventsByIds(eventIds));
         }
 
         compilation.setEvents(events);
