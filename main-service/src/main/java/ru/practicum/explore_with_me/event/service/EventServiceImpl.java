@@ -411,13 +411,7 @@ public class EventServiceImpl implements EventService {
             throw new NotFoundException("Событие " + id + " не опубликовано");
         }
 
-        HitDto hitRequest = new HitDto(
-                "main-server",
-                httpServletRequest.getRequestURI(),
-                httpServletRequest.getRemoteAddr(),
-                LocalDateTime.now()
-        );
-        hitClient.saveHit(hitRequest);
+        saveHit(httpServletRequest);
 
         List<ViewStatsDto> stats = hitClient.getStats(event.getPublishedOn().minusSeconds(1L),
                 LocalDateTime.now(), List.of("/events/" + id), true);
@@ -454,6 +448,8 @@ public class EventServiceImpl implements EventService {
                 throw new ValidationException("Указан неизвестный тип сортировки");
             }
         }
+
+        saveHit(httpServletRequest);
 
         Page<Event> events = eventRepository.findAll(
                 where(EventSpecifications.hasText(text))
@@ -575,5 +571,17 @@ public class EventServiceImpl implements EventService {
         locationRepository.save(location);
 
         return location;
+    }
+
+    private void saveHit(HttpServletRequest httpServletRequest) {
+        log.info("Сохранение информации о том, что на uri конкретного сервиса был отправлен запрос пользователем.");
+
+        HitDto hitRequest = new HitDto(
+                "main-server",
+                httpServletRequest.getRequestURI(),
+                httpServletRequest.getRemoteAddr(),
+                LocalDateTime.now()
+        );
+        hitClient.saveHit(hitRequest);
     }
 }
