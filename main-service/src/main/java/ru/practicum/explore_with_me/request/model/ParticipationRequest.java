@@ -38,10 +38,10 @@ public class ParticipationRequest {
     @JoinColumn(name = "requester_id", nullable = false)
     User requester;
 
-    //state — статус заявки
+    //status — статус заявки
     @Enumerated(EnumType.STRING)
-    @Column(name = "state", nullable = false)
-    ParticipationRequestState state;
+    @Column(name = "status", nullable = false)
+    ParticipationRequestStatus status;
 
     @Override
     public boolean equals(Object o) {

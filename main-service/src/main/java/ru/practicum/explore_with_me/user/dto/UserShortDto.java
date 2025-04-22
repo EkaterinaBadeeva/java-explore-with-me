@@ -13,6 +13,5 @@ public class UserShortDto {
     Long id;
 
     //name — имя или логин пользователя
-//  @NotBlank
     String name;
 }

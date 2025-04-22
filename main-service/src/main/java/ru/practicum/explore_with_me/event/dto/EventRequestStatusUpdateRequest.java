@@ -4,7 +4,7 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
-import ru.practicum.explore_with_me.request.model.ParticipationRequestState;
+import ru.practicum.explore_with_me.request.model.ParticipationRequestStatus;
 
 import java.util.List;
 
@@ -21,5 +21,5 @@ public class EventRequestStatusUpdateRequest {
 
     //status — новый статус запроса на участие в событии текущего пользователя
     @NotNull
-    ParticipationRequestState status;
+    ParticipationRequestStatus status;
 }

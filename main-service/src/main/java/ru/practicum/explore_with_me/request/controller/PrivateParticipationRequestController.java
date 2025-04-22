@@ -1,5 +1,6 @@
 package ru.practicum.explore_with_me.request.controller;
 
+import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -18,8 +19,8 @@ public class PrivateParticipationRequestController {
     // добавить запрос от текущего пользователя на участие в событии
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public ParticipationRequestDto create(@RequestParam Long eventId,
-                                          @PathVariable Long userId) {
+    public ParticipationRequestDto create(@RequestParam @Positive Long eventId,
+                                          @PathVariable @Positive Long userId) {
         return participationRequestService.create(eventId, userId);
     }
 

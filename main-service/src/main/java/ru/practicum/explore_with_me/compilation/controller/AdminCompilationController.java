@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import ru.practicum.explore_with_me.compilation.dto.CompilationDto;
 import ru.practicum.explore_with_me.compilation.dto.NewCompilationDto;
+import ru.practicum.explore_with_me.compilation.dto.UpdateCompilationRequest;
 import ru.practicum.explore_with_me.compilation.service.CompilationService;
 
 @RestController
@@ -26,7 +27,7 @@ public class AdminCompilationController {
     // обновить информацию о подборке
     @PatchMapping("/{compId}")
     @ResponseStatus(HttpStatus.OK)
-    public CompilationDto updateCompilation(@Valid @RequestBody NewCompilationDto compilationDto,
+    public CompilationDto updateCompilation(@Valid @RequestBody UpdateCompilationRequest compilationDto,
                                       @PathVariable Long compId) {
         return compilationService.updateCompilation(compilationDto, compId);
     }

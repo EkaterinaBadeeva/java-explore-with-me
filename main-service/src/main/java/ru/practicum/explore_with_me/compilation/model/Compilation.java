@@ -8,8 +8,8 @@ import lombok.ToString;
 import lombok.experimental.FieldDefaults;
 import ru.practicum.explore_with_me.event.model.Event;
 
+import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 
 @Entity
 @Table(name = "compilations")
@@ -29,7 +29,7 @@ public class Compilation {
     @JoinTable(name = "compilations_events",
             joinColumns = @JoinColumn(name = "compilation_id"),
             inverseJoinColumns = @JoinColumn(name = "event_id"))
-    Set<Event> events;
+            List<Event> events;
 
     //pinned — закреплена ли подборка на главной странице сайта
     @Column(name = "pinned", nullable = false)

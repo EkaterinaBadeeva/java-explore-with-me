@@ -28,13 +28,14 @@ import ru.practicum.explore_with_me.request.dao.ParticipationRequestRepository;
 import ru.practicum.explore_with_me.request.dto.ParticipationRequestDto;
 import ru.practicum.explore_with_me.request.mapper.ParticipationRequestMapper;
 import ru.practicum.explore_with_me.request.model.ParticipationRequest;
-import ru.practicum.explore_with_me.request.model.ParticipationRequestState;
+import ru.practicum.explore_with_me.request.model.ParticipationRequestStatus;
 import ru.practicum.explore_with_me.user.model.User;
 import ru.practicum.explore_with_me.user.service.UserService;
 import ru.practicum.explore_with_me.HitClient;
 
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.stream.Collectors;
 
 import static org.springframework.data.jpa.domain.Specification.where;
 import static ru.practicum.explore_with_me.event.model.EventState.*;
@@ -124,6 +125,11 @@ public class EventServiceImpl implements EventService {
             throw new ConflictException("Событие уже опубликовано. Событие с Id = " + eventId + " нельзя именить");
         }
 
+        if (eventDto.getEventDate() != null && eventDto.getEventDate().isBefore(LocalDateTime.now())) {
+            log.warn("Дата и время на которые намечено событие не может быть в прошлом.");
+            throw new ValidationException("Дата и время на которые намечено событие не может быть в прошлом.");
+        }
+
         if (eventDto.getEventDate() != null && eventDto.getEventDate().isBefore(LocalDateTime.now().plusHours(2))) {
             log.warn("Дата и время на которые намечено событие не может быть раньше, " +
                     "чем через два часа от текущего момента");
@@ -178,8 +184,6 @@ public class EventServiceImpl implements EventService {
             switch (stateAction) {
                 case SEND_TO_REVIEW -> oldEvent.setState(PENDING);
                 case CANCEL_REVIEW -> oldEvent.setState(CANCELED);
-//                case PUBLISH_EVENT -> oldEvent.setState(PUBLISHED);
-//                case REJECT_EVENT -> oldEvent.setState(CANCELED);
             }
         }
 
@@ -187,7 +191,6 @@ public class EventServiceImpl implements EventService {
         if (((title != null)) && (title.length() > 3 && title.length() < 120)) {
             oldEvent.setTitle(title);
         }
-        oldEvent = eventRepository.save(oldEvent);
         return EventMapper.mapToEventFullDto(oldEvent);
     }
 
@@ -217,46 +220,40 @@ public class EventServiceImpl implements EventService {
         User user = findAndCheckUser(userId);
         Event event = findAndCheckEventByIdAndInitiatorId(eventId, userId);
         List<Long> requestIds = dto.getRequestIds();
-        ParticipationRequestState status = dto.getStatus();
+        ParticipationRequestStatus status = dto.getStatus();
         List<ParticipationRequest> requests = requestRepository.findAllByIdIn(requestIds);
-        List<ParticipationRequest> confirmedRequests = new ArrayList<>();
-        List<ParticipationRequest> rejectedRequests = new ArrayList<>();
+
+        List<ParticipationRequest> confirmedRequests = requestRepository.findAllByEventIdAndStatus(eventId, ParticipationRequestStatus.CONFIRMED);
+        event.setConfirmedRequests(confirmedRequests.size());
+
+        List<ParticipationRequest> rejectedRequests = requestRepository.findAllByEventIdAndStatus(eventId, ParticipationRequestStatus.REJECTED);
 
         for (ParticipationRequest request : requests) {
-            if (request.getState() != ParticipationRequestState.PENDING) {
+            if (request.getStatus() != ParticipationRequestStatus.PENDING) {
                 throw new ConflictException("Статус можно изменить только у заявок, находящихся в состоянии ожидания");
             }
 
-            if (event.getConfirmedRequests() < event.getParticipantLimit() && status == ParticipationRequestState.CONFIRMED) {
-                request.setState(ParticipationRequestState.CONFIRMED);
+            if (event.getConfirmedRequests() >= event.getParticipantLimit()) {
+                throw new ConflictException("Достигнут лимит по заявкам на данное событие");
+            }
+            if (status == ParticipationRequestStatus.CONFIRMED) {
+                request.setStatus(ParticipationRequestStatus.CONFIRMED);
                 confirmedRequests.add(request);
                 event.setConfirmedRequests(event.getConfirmedRequests() + 1);
             } else {
-                request.setState(ParticipationRequestState.REJECTED);
+                request.setStatus(ParticipationRequestStatus.REJECTED);
                 rejectedRequests.add(request);
             }
-
-            eventRepository.save(event);
-            requestRepository.saveAll(requests);
         }
 
         return EventRequestStatusUpdateResult.builder()
                 .confirmedRequests(confirmedRequests.stream().map(ParticipationRequestMapper::mapToParticipationRequestDto).toList())
                 .rejectedRequests(rejectedRequests.stream().map(ParticipationRequestMapper::mapToParticipationRequestDto).toList())
                 .build();
-//
-//        если для события лимит заявок равен 0 или отключена пре-модерация заявок,
-//        то подтверждение заявок не требуется
-//нельзя подтвердить заявку, если уже достигнут лимит по заявкам на данное событие
-// (Ожидается код ошибки 409)
-//статус можно изменить только у заявок, находящихся в состоянии ожидания
-// (Ожидается код ошибки 409)
-//если при подтверждении данной заявки, лимит заявок для события исчерпан,
-// то все неподтверждённые заявки необходимо отклонить
-//
     }
 
     @Override
+    @Transactional
     public List<EventFullDto> getEventsAdmin(List<Long> users,
                                              List<String> states,
                                              List<Long> categories,
@@ -269,6 +266,7 @@ public class EventServiceImpl implements EventService {
 
         int page = from / size;
         Pageable pageable = PageRequest.of(page, size);
+
         Page<Event> events = eventRepository.findAll(
                 where(EventSpecifications.hasInitiators(users))
                         .and(EventSpecifications.hasStates(states))
@@ -277,25 +275,44 @@ public class EventServiceImpl implements EventService {
                 pageable
         );
 
-        List<ParticipationRequest> requests = requestRepository
-                .findAllByEventIdInAndState(events.getContent()
-                        .stream()
-                        .map(Event::getId).toList(), ParticipationRequestState.CONFIRMED);
+        List<Long> eventIds = events.getContent().stream()
+                .map(Event::getId)
+                .toList();
 
-        Map<Long, Integer> confirmedRequests = new HashMap<>();
+        Map<Long, Long> confirmedRequestsCount = requestRepository
+                .countByEventIdInAndStatus(eventIds, ParticipationRequestStatus.CONFIRMED)
+                .stream()
+                .collect(Collectors.toMap(
+                        tuple -> ((Number) tuple[0]).longValue(),
+                        tuple -> ((Number) tuple[1]).longValue()
+                ));
 
-        for (ParticipationRequest request: requests) {
-            confirmedRequests.merge(request.getEvent().getId(), 1, Integer::sum);
+        List<String> uris = eventIds.stream()
+                .map(id -> "/events/" + id)
+                .toList();
+        List<ViewStatsDto> stats = hitClient.getStats(
+                events.getContent().stream()
+                        .map(Event::getPublishedOn)
+                        .filter(Objects::nonNull)
+                        .min(LocalDateTime::compareTo)
+                        .orElse(LocalDateTime.now().plusHours(1)),
+                LocalDateTime.now(),
+                uris,
+                true);
+
+        Map<Long, Long> viewsStats = new HashMap<>();
+
+        for (ViewStatsDto stat : stats) {
+            viewsStats.put(Long.parseLong(stat.getUri().substring("/events/".length())), stat.getHits());
         }
 
         return events.getContent()
                 .stream()
-                .map((event) -> {
-                    Integer value = confirmedRequests.get(event.getId());
-                    if (value != null) {
-                        event.setConfirmedRequests(value);
-                    }
-                    return EventMapper.mapToEventFullDto(event);
+                .map(event -> {
+                    EventFullDto dto = EventMapper.mapToEventFullDto(event);
+                    dto.setConfirmedRequests(Math.toIntExact(confirmedRequestsCount.getOrDefault(event.getId(), 0L)));
+                    dto.setViews(viewsStats.getOrDefault(event.getId(), 0L));
+                    return dto;
                 })
                 .toList();
     }
@@ -308,21 +325,15 @@ public class EventServiceImpl implements EventService {
         Event oldEvent = eventRepository.findById(eventId)
                 .orElseThrow(() -> new NotFoundException("Событие с id = " + eventId + " не найдено"));
 
-        //дата начала изменяемого события должна быть не ранее чем за час от даты публикации.
-        // (Ожидается код ошибки 409)
-        //событие можно публиковать, только если оно в состоянии ожидания публикации
-        // (Ожидается код ошибки 409)
-        //событие можно отклонить, только если оно еще не опубликовано (Ожидается код ошибки 409)
-
         if (oldEvent.getState().equals(PUBLISHED)) {
             log.warn("Событие уже опубликовано. Событие с Id = {} нельзя именить", eventId);
             throw new ConflictException("Событие уже опубликовано. Событие с Id = " + eventId + " нельзя изменить");
         }
 
-//        if (oldEventDto.getEventDate() != null && oldEventDto.getEventDate().isAfter(oldEventDto.getPublishedOn().minusHours(1))) {
-//            log.warn("Дата начала изменяемого события должна быть не ранее чем за час от даты публикации");
-//            throw new ConflictException("Дата начала изменяемого события должна быть не ранее чем за час от даты публикации");
-//        }
+        if (oldEvent.getEventDate() != null && oldEvent.getPublishedOn() != null && oldEvent.getEventDate().isAfter(oldEvent.getPublishedOn().minusHours(1))) {
+            log.warn("Дата начала изменяемого события должна быть не ранее чем за час от даты публикации");
+            throw new ConflictException("Дата начала изменяемого события должна быть не ранее чем за час от даты публикации");
+        }
 
         String newAnnotation = eventDto.getAnnotation();
         if (((newAnnotation != null)) && (newAnnotation.length() > 20 && newAnnotation.length() < 2000)) {
@@ -387,12 +398,11 @@ public class EventServiceImpl implements EventService {
             oldEvent.setTitle(title);
         }
 
-        Event event = eventRepository.save(oldEvent);
-
-        return EventMapper.mapToEventFullDto(event);
+        return EventMapper.mapToEventFullDto(oldEvent);
     }
 
     @Override
+    @Transactional
     public EventFullDto getEventByIdPublic(Long id, HttpServletRequest httpServletRequest) {
         log.info("Получение подробной информации об опубликованном событии по его идентификатору.");
         Event event = findEventById(id);
@@ -409,7 +419,7 @@ public class EventServiceImpl implements EventService {
         );
         hitClient.saveHit(hitRequest);
 
-        List<ViewStatsDto> stats = hitClient.getStats(event.getPublishedOn(),
+        List<ViewStatsDto> stats = hitClient.getStats(event.getPublishedOn().minusSeconds(1L),
                 LocalDateTime.now(), List.of("/events/" + id), true);
 
         Long views = 0L;
@@ -420,16 +430,9 @@ public class EventServiceImpl implements EventService {
 
         return EventMapper.mapToEventFullDto(event);
     }
-//
-//    событие должно быть опубликовано
-//    информация о событии должна включать в себя количество просмотров и
-//    количество подтвержденных запросов
-//    информацию о том, что по этому эндпоинту был осуществлен и обработан запрос,
-//    нужно сохранить в сервисе статистики
-//    В случае, если события с заданным id не найдено, возвращает статус код 404
-
 
     @Override
+    @Transactional
     public List<EventShortDto> getEventsPublic(String text,
                                                List<Long> categories,
                                                Boolean paid,
@@ -461,29 +464,37 @@ public class EventServiceImpl implements EventService {
                         .and(EventSpecifications.hasState(EventState.PUBLISHED)),
                 pageable
         );
-        return events.getContent().stream()
-                .map((event) -> {
-                    List<ViewStatsDto> stats = hitClient.getStats(event.getPublishedOn(),
-                            LocalDateTime.now(), List.of("/events/" + event.getId()), true);
-                    Long views = 0L;
-                    if (stats != null && !stats.isEmpty()) {
-                        views = stats.getFirst().getHits();
-                    }
-                    event.setViews(views);
 
-                    return EventMapper.mapToEventShortDto(event);
+        List<Long> eventIds = events.getContent().stream()
+                .map(Event::getId)
+                .toList();
+
+        List<String> uris = eventIds.stream()
+                .map(id -> "/events/" + id)
+                .toList();
+
+        Map<Long, Long> viewsStats = new HashMap<>();
+        for (ViewStatsDto stat : hitClient.getStats(
+                events.getContent().stream()
+                        .map(Event::getPublishedOn)
+                        .filter(Objects::nonNull)
+                        .min(LocalDateTime::compareTo)
+                        .orElse(LocalDateTime.now().plusHours(1)),
+                LocalDateTime.now(),
+                uris,
+                true)) {
+            viewsStats.put(Long.parseLong(stat.getUri().substring("/events/".length())), stat.getHits());
+        }
+
+        return events.getContent()
+                .stream()
+                .map(event -> {
+                    EventShortDto dto = EventMapper.mapToEventShortDto(event);
+                    dto.setViews(viewsStats.getOrDefault(event.getId(), 0L));
+                    return dto;
                 })
                 .toList();
     }
-//   это публичный эндпоинт, соответственно в выдаче должны быть только опубликованные события
-//текстовый поиск (по аннотации и подробному описанию) должен быть без учета регистра букв
-//если в запросе не указан диапазон дат [rangeStart-rangeEnd], то нужно выгружать события,
-// которые произойдут позже текущей даты и времени
-//информация о каждом событии должна включать в себя количество просмотров и количество уже
-// одобренных заявок на участие
-//информацию о том, что по этому эндпоинту был осуществлен и обработан запрос,
-// нужно сохранить в сервисе статистики
-//В случае, если по заданным фильтрам не найдено ни одного события, возвращает пустой список
 
     @Override
     public Event findEventById(Long eventId) {
@@ -539,9 +550,8 @@ public class EventServiceImpl implements EventService {
 
     private Category findAndCheckCategory(Long catId) {
 
-        return categoryRepository.findById(catId).orElseThrow(
-                () -> new NotFoundException("Категория с Id = " + catId + " не найдена")
-        );
+        return categoryRepository.findById(catId)
+                .orElseThrow(() -> new NotFoundException("Категория с Id = " + catId + " не найдена"));
     }
 
     private User findAndCheckUser(Long userId) {

@@ -13,7 +13,6 @@ import ru.practicum.explore_with_me.category.dto.NewCategoryDto;
 import ru.practicum.explore_with_me.category.mapper.CategoryMapper;
 import ru.practicum.explore_with_me.category.model.Category;
 import ru.practicum.explore_with_me.event.service.EventService;
-import ru.practicum.explore_with_me.exceptions.CommonException;
 import ru.practicum.explore_with_me.exceptions.ConflictException;
 import ru.practicum.explore_with_me.exceptions.NotFoundException;
 import ru.practicum.explore_with_me.exceptions.ValidationException;
@@ -46,10 +45,14 @@ public class CategoryServiceImpl implements CategoryService {
         log.info("Изменение категории.");
         checkId(catId);
         Category newCategory = CategoryMapper.mapToCategory(categoryDto);
-        checkName(newCategory);
+
         Category oldCategory = findCategoryById(catId);
+
+        if ((newCategory.getName() != null) && (!oldCategory.getName().equals(newCategory.getName()))) {
+            checkName(newCategory);
+        }
+
         oldCategory.setName(newCategory.getName());
-        oldCategory = categoryRepository.save(oldCategory);
 
         return CategoryMapper.mapToCategoryDto(oldCategory);
     }
@@ -102,9 +105,9 @@ public class CategoryServiceImpl implements CategoryService {
     }
 
     private void checkName(Category category) {
-        if (categoryRepository.existsByNameAndIdNot(category.getName(), category.getId())) {
+        if (categoryRepository.existsByName(category.getName())) {
             log.warn("Категория уже существует.");
-            throw new CommonException("Категория с name = " + category.getName() + " уже существует");
+            throw new ConflictException("Категория с name = " + category.getName() + " уже существует");
         }
     }
 

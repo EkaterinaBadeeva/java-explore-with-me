@@ -2,6 +2,7 @@ drop table IF EXISTS users CASCADE;
 drop table IF EXISTS categories CASCADE;
 drop table IF EXISTS locations CASCADE;
 drop table IF EXISTS events CASCADE;
+drop table IF EXISTS requests CASCADE;
 drop table IF EXISTS compilations CASCADE;
 drop table IF EXISTS compilations_events CASCADE;
 
@@ -56,7 +57,7 @@ create TABLE IF NOT EXISTS requests (
   created TIMESTAMP NOT NULL,
   event_id BIGINT REFERENCES events(id) ON delete CASCADE,
   requester_id BIGINT REFERENCES users(id) ON delete CASCADE,
-  state VARCHAR NOT NULL,
+  status VARCHAR NOT NULL,
   CONSTRAINT pk_request PRIMARY KEY (id)
 );
 

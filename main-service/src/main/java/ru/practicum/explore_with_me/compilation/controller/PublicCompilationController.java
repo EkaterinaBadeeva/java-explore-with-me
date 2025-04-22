@@ -22,7 +22,7 @@ public class PublicCompilationController {
     // size - количество категорий в наборе
     @GetMapping
     @ResponseStatus(HttpStatus.OK)
-    public List<CompilationDto> getCompilations(@RequestParam Boolean pinned,
+    public List<CompilationDto> getCompilations(@RequestParam(defaultValue = "false") Boolean pinned,
                                                 @RequestParam(defaultValue = "0") @PositiveOrZero Integer from,
                                                 @RequestParam(defaultValue = "10") @Positive Integer size) {
         return compilationService.getCompilations(pinned, from, size);

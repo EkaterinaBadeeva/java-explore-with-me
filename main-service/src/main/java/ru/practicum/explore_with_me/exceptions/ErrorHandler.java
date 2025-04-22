@@ -24,12 +24,7 @@ public class ErrorHandler {
     public ErrorResponse handleNotFoundException(final NotFoundException e) {
         String reason = "Искомый объект не найден.";
         HttpStatus status = HttpStatus.NOT_FOUND;
-        return ErrorResponse.builder()
-                .errors(List.of(e.getMessage()))
-                .message(e.getMessage())
-                .reason(reason)
-                .status(status.toString())
-                .build();
+        return buildException(e, reason, status);
     }
 
     @ExceptionHandler

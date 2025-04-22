@@ -3,7 +3,7 @@ package ru.practicum.explore_with_me.request.dto;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
-import ru.practicum.explore_with_me.request.model.ParticipationRequestState;
+import ru.practicum.explore_with_me.request.model.ParticipationRequestStatus;
 
 import java.time.LocalDateTime;
 
@@ -26,6 +26,6 @@ public class ParticipationRequestDto {
     //requester — идентификатор пользователя, отправившего заявку
     Long requester;
 
-    //state — статус заявки
-    ParticipationRequestState status;
+    //status — статус заявки
+    ParticipationRequestStatus status;
 }

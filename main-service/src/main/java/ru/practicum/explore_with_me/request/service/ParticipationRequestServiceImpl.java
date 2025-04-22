@@ -17,11 +17,10 @@ import ru.practicum.explore_with_me.user.model.User;
 import ru.practicum.explore_with_me.user.service.UserService;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 
 import static ru.practicum.explore_with_me.event.model.EventState.PUBLISHED;
-import static ru.practicum.explore_with_me.request.model.ParticipationRequestState.*;
+import static ru.practicum.explore_with_me.request.model.ParticipationRequestStatus.*;
 
 @Slf4j
 @Service
@@ -49,9 +48,9 @@ public class ParticipationRequestServiceImpl implements ParticipationRequestServ
         request.setRequester(user);
 
         if (event.getRequestModeration().equals(false) || event.getParticipantLimit() == 0) {
-            request.setState(CONFIRMED);
+            request.setStatus(CONFIRMED);
         } else {
-            request.setState(PENDING);
+            request.setStatus(PENDING);
         }
 
         request = participationRequestRepository.save(request);
@@ -63,13 +62,17 @@ public class ParticipationRequestServiceImpl implements ParticipationRequestServ
     public ParticipationRequestDto cancelParticipationRequest(Long userId, Long requestId) {
         log.info("Отмена своего запроса на участие в событии.");
         findAndCheckUser(userId);
-        checkExistRequest(userId, requestId);
 
         ParticipationRequest request = participationRequestRepository.findById(requestId).orElseThrow(() ->
-                new NotFoundException("Пользователь с Id = " + requestId + " не найден"));
+                new NotFoundException("Запрос с Id = " + requestId + " не найден"));
 
-        request.setState(CANCELED);
-        request = participationRequestRepository.save(request);
+        if (!request.getRequester().getId().equals(userId)) {
+            log.warn("Невозможно отменить запрос от другого пользователя на участие в событии c id = {} уже существует", request.getEvent().getId());
+            throw new ConflictException("Невозможно отменить запрос от другого пользователя на участие в событии c id = "
+                    + request.getEvent().getId());
+        }
+
+        request.setStatus(CANCELED);
         return ParticipationRequestMapper.mapToParticipationRequestDto(request);
     }
 
@@ -82,32 +85,6 @@ public class ParticipationRequestServiceImpl implements ParticipationRequestServ
         return requests.stream().map(ParticipationRequestMapper::mapToParticipationRequestDto).toList();
     }
 
-    @Override
-    public List<ParticipationRequestDto> findParticipationRequests(List<Long> requestIds) {
-        log.info("Получение информации о заявках по их ids.");
-
-        List<ParticipationRequest> requests = participationRequestRepository.findAllByIdIn(requestIds);
-        return requests.stream().map(ParticipationRequestMapper::mapToParticipationRequestDto).toList();
-    }
-
-    @Override
-    @Transactional
-    public void updateStateRequests(List<ParticipationRequestDto> requestsDto, Event event, User user) {
-        List<ParticipationRequest> requests = new ArrayList<>();
-        log.info("Обновить статусы заявок события.");
-        for (ParticipationRequestDto requestDto : requestsDto) {
-            ParticipationRequest request = new ParticipationRequest();
-            request.setId(requestDto.getId());
-            request.setCreated(requestDto.getCreated());
-            request.setEvent(event);
-            request.setRequester(user);
-            request.setState(requestDto.getStatus());
-
-            requests.add(request);
-        }
-        participationRequestRepository.saveAll(requests);
-    }
-
     private void checkId(Long id) {
         if (id == null) {
             log.warn("Id должен быть указан.");
@@ -116,10 +93,7 @@ public class ParticipationRequestServiceImpl implements ParticipationRequestServ
     }
 
     private void checkExistRequest(Long userId, Long eventId) {
-        //Optional<ParticipationRequest> requestOpt = participationRequestRepository
-         //       .findByRequesterIdAndEventId(userId, eventId);
 
-        //if (requestOpt.isPresent()) {
         if (participationRequestRepository.existsByRequesterIdAndEventId(userId, eventId)) {
             log.warn("Запрос от пользователя с id = {} на участие в событии c id = {} уже существует", userId, eventId);
             throw new ConflictException("Запрос от пользователя с id = " + userId + " на участие в событии c id = "
@@ -145,8 +119,8 @@ public class ParticipationRequestServiceImpl implements ParticipationRequestServ
             throw new ConflictException("Нельзя участвовать в неопубликованном событии");
         }
 
-        List<ParticipationRequest> requestsConfirmed = participationRequestRepository.findAllByEventIdAndState(eventId, CONFIRMED);
-        int amountRequests = requestsConfirmed.size();
+        List<ParticipationRequest> requestsConfirmed = participationRequestRepository.findAllByEventIdAndStatus(eventId, CONFIRMED);
+        long amountRequests = requestsConfirmed.size();
 
         if (event.getParticipantLimit() > 0 && amountRequests >= event.getParticipantLimit()) {
             log.warn("У события достигнут лимит запросов на участие.");

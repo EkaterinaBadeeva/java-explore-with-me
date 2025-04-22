@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.practicum.explore_with_me.compilation.dao.CompilationRepository;
 import ru.practicum.explore_with_me.compilation.dto.CompilationDto;
 import ru.practicum.explore_with_me.compilation.dto.NewCompilationDto;
+import ru.practicum.explore_with_me.compilation.dto.UpdateCompilationRequest;
 import ru.practicum.explore_with_me.compilation.mapper.CompilationMapper;
 import ru.practicum.explore_with_me.compilation.model.Compilation;
 import ru.practicum.explore_with_me.event.model.Event;
@@ -19,7 +20,6 @@ import ru.practicum.explore_with_me.exceptions.NotFoundException;
 import ru.practicum.explore_with_me.exceptions.ValidationException;
 
 import java.util.List;
-import java.util.Set;
 
 @Slf4j
 @Service
@@ -38,14 +38,15 @@ public class CompilationServiceImpl implements CompilationService {
         checkTitle(compilation);
 
         List<Long> eventIds = compilationDto.getEvents();
-        Set<Event> events = Set.of();
+        List<Event> events = List.of();
 
-        if (eventIds == null) {
+        if (eventIds == null || eventIds.isEmpty()) {
             compilation.setEvents(events);
         } else {
-            events = Set.copyOf(eventService.findEventsByIds(eventIds));
+            events = eventService.findEventsByIds(eventIds);
         }
 
+        compilation.setEvents(events);
         compilation.setEvents(events);
         compilation = compilationRepository.save(compilation);
 
@@ -54,13 +55,15 @@ public class CompilationServiceImpl implements CompilationService {
 
     @Override
     @Transactional
-    public CompilationDto updateCompilation(NewCompilationDto compilationDto, Long compId) {
+    public CompilationDto updateCompilation(UpdateCompilationRequest compilationDto, Long compId) {
         log.info("Обновить информацию о подборке.");
+
         checkId(compId);
 
         Compilation newCompilation = CompilationMapper.mapToCompilation(compilationDto);
         Compilation oldCompilation = findCompilationById(compId);
         String newTitle = newCompilation.getTitle();
+
         if (newTitle != null && !newTitle.equals(oldCompilation.getTitle())) {
             checkTitle(newCompilation);
             oldCompilation.setTitle(newTitle);
@@ -72,19 +75,12 @@ public class CompilationServiceImpl implements CompilationService {
         }
 
         List<Long> eventIds = compilationDto.getEvents();
-        Set<Event> newEvents = Set.of();
-        Set<Event> oldEvents = oldCompilation.getEvents();
+        List<Event> newEvents;
 
-        if (eventIds != null && oldEvents.isEmpty()) {
-            newEvents = (Set<Event>) eventService.findEventsByIds(eventIds);
+        if (eventIds != null) {
+            newEvents = eventService.findEventsByIds(eventIds);
             oldCompilation.setEvents(newEvents);
-        } else if (eventIds != null && !oldEvents.isEmpty()) {
-            newEvents = (Set<Event>) eventService.findEventsByIds(eventIds);
-            oldEvents.addAll(newEvents);
-            oldCompilation.setEvents(oldEvents);
         }
-
-        oldCompilation = compilationRepository.save(oldCompilation);
 
         return CompilationMapper.mapToCompilationDto(oldCompilation);
     }
@@ -107,7 +103,12 @@ public class CompilationServiceImpl implements CompilationService {
         int page = from / size;
         Pageable pageable = PageRequest.of(page, size);
         Page<Compilation> compilationPage;
-        compilationPage = compilationRepository.findAll(pageable);
+
+        if (pinned != null) {
+            compilationPage = compilationRepository.findByPinned(pinned, pageable);
+        } else {
+            compilationPage = compilationRepository.findAll(pageable);
+        }
 
         return compilationPage.getContent()
                 .stream()

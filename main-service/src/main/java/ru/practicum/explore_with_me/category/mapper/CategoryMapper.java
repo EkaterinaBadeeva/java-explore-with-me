@@ -23,12 +23,6 @@ public class CategoryMapper {
         return category;
     }
 
-    public static NewCategoryDto mapToNewCategoryDto(Category category) {
-        return NewCategoryDto.builder()
-                .name(category.getName())
-                .build();
-    }
-
     public static Category mapToCategory(NewCategoryDto categoryDto) {
         Category category = new Category();
         category.setName(categoryDto.getName());

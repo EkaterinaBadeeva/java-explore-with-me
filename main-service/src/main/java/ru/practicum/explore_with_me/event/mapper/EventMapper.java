@@ -56,22 +56,6 @@ public class EventMapper {
         return event;
     }
 
-    public static NewEventDto mapToNewEventDto(Event event) {
-        return NewEventDto.builder()
-                .annotation(event.getAnnotation())
-                .description(event.getDescription())
-                .eventDate(event.getEventDate())
-                .location(LocationDto.builder()
-                        .lat(event.getLocation().getLat())
-                        .lon(event.getLocation().getLon())
-                        .build())
-                .paid(event.getPaid())
-                .participantLimit(event.getParticipantLimit())
-                .requestModeration(event.getRequestModeration())
-                .title(event.getTitle())
-                .build();
-    }
-
     public static Event mapToEvent(NewEventDto eventDto) {
         Event event = new Event();
         event.setAnnotation(eventDto.getAnnotation());
