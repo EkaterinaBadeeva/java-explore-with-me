@@ -149,6 +149,6 @@ public class CompilationServiceImpl implements CompilationService {
 
     private Compilation findCompilationById(Long comId) {
         return compilationRepository.findById(comId)
-                .orElseThrow(() -> new NotFoundException("Подборка событий не найдена"));
+                .orElseThrow(() -> new NotFoundException("Подборка событий с id = " + comId + " не найдена"));
     }
 }
