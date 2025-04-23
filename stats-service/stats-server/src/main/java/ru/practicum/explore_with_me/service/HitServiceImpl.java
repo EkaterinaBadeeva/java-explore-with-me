@@ -43,14 +43,22 @@ public class HitServiceImpl implements HitService {
 
         if (uris == null || uris.isEmpty()) {
             if (unique) {
+                log.info("Получение статистики по посещениям где start = {}, end = {}, " +
+                        "uris должно быть null, а = {} и unique должно быть true, а = {}", start, end, uris, unique);
                 viewsStats = hitRepository.findAllHitsAndTimestampBetweenStartEndAndUniqueIp(start, end);
             } else {
+                log.info("Получение статистики по посещениям где start = {}, end = {}, " +
+                        "uris должно быть null, а = {} и unique должно быть false, а = {}", start, end, uris, unique);
                 viewsStats = hitRepository.findAllHitsAndTimestampBetweenStartEnd(start, end);
             }
         } else {
             if (unique) {
+                log.info("Получение статистики по посещениям где start = {}, end = {}, " +
+                        "uris = {} и unique должно быть true, а = {}", start, end, uris, unique);
                 viewsStats = hitRepository.findAllHitsAndTimestampBetweenStartEndAndUrisInAndUniqueIp(start, end, uris);
             } else {
+                log.info("Получение статистики по посещениям где start = {}, end = {}, " +
+                        "uris = {} и unique должно быть false, а = {}", start, end, uris, unique);
                 viewsStats = hitRepository.findAllHitsAndTimestampBetweenStartEndAndUrisIn(start, end, uris);
             }
         }
