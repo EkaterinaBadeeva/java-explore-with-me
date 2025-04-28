@@ -6,7 +6,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.practicum.explore_with_me.HitDto;
@@ -18,12 +17,14 @@ import ru.practicum.explore_with_me.event.dao.LocationRepository;
 import ru.practicum.explore_with_me.event.dto.*;
 import ru.practicum.explore_with_me.event.mapper.EventMapper;
 import ru.practicum.explore_with_me.event.model.Event;
-import ru.practicum.explore_with_me.event.model.EventState;
 import ru.practicum.explore_with_me.event.model.Location;
 import ru.practicum.explore_with_me.event.model.StateAction;
 import ru.practicum.explore_with_me.exceptions.ConflictException;
 import ru.practicum.explore_with_me.exceptions.NotFoundException;
 import ru.practicum.explore_with_me.exceptions.ValidationException;
+import ru.practicum.explore_with_me.rating.dao.RatingRepository;
+import ru.practicum.explore_with_me.rating.model.Rating;
+import ru.practicum.explore_with_me.rating.model.RatingState;
 import ru.practicum.explore_with_me.request.dao.ParticipationRequestRepository;
 import ru.practicum.explore_with_me.request.dto.ParticipationRequestDto;
 import ru.practicum.explore_with_me.request.mapper.ParticipationRequestMapper;
@@ -51,6 +52,7 @@ public class EventServiceImpl implements EventService {
     private final ParticipationRequestRepository requestRepository;
     private final UserService userService;
     private final CategoryRepository categoryRepository;
+    private final RatingRepository ratingRepository;
     private final HitClient hitClient;
 
     @Override
@@ -107,6 +109,12 @@ public class EventServiceImpl implements EventService {
         findAndCheckUser(userId);
 
         Event event = findAndCheckEventByIdAndInitiatorId(eventId, userId);
+        List<Rating> ratings = ratingRepository.findAllByEventId(eventId);
+        int ratingEvent = calculateEventRating(ratings);
+        event.setRating(ratingEvent);
+
+        int ratingInitiator = calculateUserRating(userId);
+        event.setRatingInitiator(ratingInitiator);
 
         return EventMapper.mapToEventFullDto(event);
     }
@@ -253,7 +261,6 @@ public class EventServiceImpl implements EventService {
     }
 
     @Override
-    @Transactional
     public List<EventFullDto> getEventsAdmin(List<Long> users,
                                              List<String> states,
                                              List<Long> categories,
@@ -295,7 +302,7 @@ public class EventServiceImpl implements EventService {
                         .map(Event::getPublishedOn)
                         .filter(Objects::nonNull)
                         .min(LocalDateTime::compareTo)
-                        .orElse(LocalDateTime.now().plusHours(1)),
+                        .orElse(LocalDateTime.now().minusHours(1)),
                 LocalDateTime.now(),
                 uris,
                 true);
@@ -413,7 +420,7 @@ public class EventServiceImpl implements EventService {
 
         saveHit(httpServletRequest);
 
-        List<ViewStatsDto> stats = hitClient.getStats(event.getPublishedOn().minusSeconds(1L),
+        List<ViewStatsDto> stats = hitClient.getStats(event.getPublishedOn().minusHours(1L),
                 LocalDateTime.now(), List.of("/events/" + id), true);
 
         Long views = 0L;
@@ -422,11 +429,18 @@ public class EventServiceImpl implements EventService {
         }
         event.setViews(views);
 
+        List<Rating> ratings = ratingRepository.findAllByEventId(id);
+        int ratingEvent = calculateEventRating(ratings);
+        event.setRating(ratingEvent);
+
+        User initiator = event.getInitiator();
+        int ratingInitiator = calculateUserRating(initiator.getId());
+        event.setRatingInitiator(ratingInitiator);
+
         return EventMapper.mapToEventFullDto(event);
     }
 
     @Override
-    @Transactional
     public List<EventShortDto> getEventsPublic(String text,
                                                List<Long> categories,
                                                Boolean paid,
@@ -437,17 +451,10 @@ public class EventServiceImpl implements EventService {
                                                Integer size,
                                                HttpServletRequest httpServletRequest) {
         checkStartAndEnd(rangeStart, rangeEnd);
+        checkSort(sort);
 
         int page = from / size;
-        Pageable pageable;
-        switch (sort) {
-            case "EVENT_DATE" -> pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "eventDate"));
-            case "VIEWS" -> pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "views"));
-            case null -> pageable = PageRequest.of(page, size, Sort.unsorted());
-            default -> {
-                throw new ValidationException("Указан неизвестный тип сортировки");
-            }
-        }
+        Pageable pageable = PageRequest.of(page, size);
 
         saveHit(httpServletRequest);
 
@@ -457,7 +464,7 @@ public class EventServiceImpl implements EventService {
                         .and(EventSpecifications.hasPaid(paid))
                         .and(EventSpecifications.dateBetweenOrAfterNow(rangeStart, rangeEnd))
                         .and(EventSpecifications.isAvailable(onlyAvailable))
-                        .and(EventSpecifications.hasState(EventState.PUBLISHED)),
+                        .and(EventSpecifications.hasState(PUBLISHED)),
                 pageable
         );
 
@@ -475,21 +482,148 @@ public class EventServiceImpl implements EventService {
                         .map(Event::getPublishedOn)
                         .filter(Objects::nonNull)
                         .min(LocalDateTime::compareTo)
-                        .orElse(LocalDateTime.now().plusHours(1)),
+                        .orElse(LocalDateTime.now().minusHours(1)),
                 LocalDateTime.now(),
                 uris,
                 true)) {
             viewsStats.put(Long.parseLong(stat.getUri().substring("/events/".length())), stat.getHits());
         }
 
-        return events.getContent()
-                .stream()
-                .map(event -> {
-                    EventShortDto dto = EventMapper.mapToEventShortDto(event);
-                    dto.setViews(viewsStats.getOrDefault(event.getId(), 0L));
-                    return dto;
-                })
-                .toList();
+        Map<Long, Integer> ratingEvent = new HashMap<>();
+        List<List<Rating>> ratingsEvents = ratingRepository.findAllByEventIdIn(eventIds);
+
+        for (List<Rating> ratings : ratingsEvents) {
+            Integer ratingOfEvent = calculateEventRating(ratings);
+            ratingEvent.put(ratings.getFirst().getEvent().getId(), ratingOfEvent);
+        }
+
+        Map<Long, Integer> ratingInitiator = new HashMap<>();
+        Set<Long> initiatorIds = events.getContent().stream()
+                .map(Event::getInitiator)
+                .map(User::getId)
+                .collect(Collectors.toSet());
+
+        List<Event> eventsOfUsers = eventRepository.findAllByInitiatorIdIn(initiatorIds);
+        List<List<Rating>> ratingsEventsOfInitiators = ratingRepository.findAllByEventIdIn(eventsOfUsers.stream().map(Event::getId).toList());
+
+        Map<Long, List<Long>> userEvents = new HashMap<>();
+
+        for (Long initiatorId : initiatorIds) {
+            List<Long> eventsId = new ArrayList<>();
+            for (Event eventUser : eventsOfUsers) {
+
+                if (eventUser.getInitiator().getId().equals(initiatorId)) {
+                    eventsId.add(eventUser.getId());
+                }
+            }
+            userEvents.put(initiatorId, eventsId);
+        }
+
+        Map<Long, Map<RatingState, Long>> eventsWithRatings = new HashMap<>();
+
+        for (List<Rating> ratingEventsOfInitiators : ratingsEventsOfInitiators) {
+            if (ratingEventsOfInitiators.isEmpty()) {
+                continue;
+            }
+
+            Long eventId = ratingEventsOfInitiators.getFirst().getEvent().getId();
+            Map<RatingState, Long> likesAndDislikes = new HashMap<>();
+
+            for (Rating rating : ratingEventsOfInitiators) {
+                RatingState state = rating.getState();
+                Long sumState = likesAndDislikes.get(state);
+
+                if (sumState == null) {
+                    sumState = 0L;
+                }
+
+                sumState++;
+                likesAndDislikes.put(state, sumState);
+            }
+            eventsWithRatings.put(eventId, likesAndDislikes);
+        }
+
+        for (Long initiatorId : initiatorIds) {
+            int likes = 0;
+            int dislikes = 0;
+            for (Long eventId : userEvents.get(initiatorId)) {
+                Map<RatingState, Long> likesAndDislikes = eventsWithRatings.get(eventId);
+
+                if (likesAndDislikes != null) {
+
+                    if (likesAndDislikes.get(RatingState.LIKE) != null) {
+                        likes = likes + Math.toIntExact(likesAndDislikes.get(RatingState.LIKE));
+                    }
+                    if (likesAndDislikes.get(RatingState.DISLIKE) != null) {
+                        likes = likes + Math.toIntExact(likesAndDislikes.get(RatingState.DISLIKE));
+                    }
+                }
+            }
+            ratingInitiator.put(initiatorId, calculateRating(likes, dislikes));
+        }
+
+        List<EventShortDto> list;
+        switch (sort) {
+            case "EVENT_DATE" -> list = events.getContent()
+                    .stream()
+                    .map(event -> {
+                        EventShortDto dto = EventMapper.mapToEventShortDto(event);
+                        dto.setViews(viewsStats.getOrDefault(event.getId(), 0L));
+                        dto.setRating(ratingEvent.getOrDefault(event.getId(), 0));
+                        dto.setRatingInitiator(ratingInitiator.getOrDefault(event.getInitiator().getId(), 0));
+                        return dto;
+                    })
+                    .sorted(Comparator.comparing(EventShortDto::getEventDate).reversed())
+                    .toList();
+            case "VIEWS" -> list = events.getContent()
+                    .stream()
+                    .map(event -> {
+                        EventShortDto dto = EventMapper.mapToEventShortDto(event);
+                        dto.setViews(viewsStats.getOrDefault(event.getId(), 0L));
+                        dto.setRating(ratingEvent.getOrDefault(event.getId(), 0));
+                        dto.setRatingInitiator(ratingInitiator.getOrDefault(event.getInitiator().getId(), 0));
+                        return dto;
+                    })
+                    .sorted(Comparator.comparingLong(EventShortDto::getViews).reversed())
+                    .toList();
+            case "RATING" -> list = events.getContent()
+                    .stream()
+                    .map(event -> {
+                        EventShortDto dto = EventMapper.mapToEventShortDto(event);
+                        dto.setViews(viewsStats.getOrDefault(event.getId(), 0L));
+                        dto.setRating(ratingEvent.getOrDefault(event.getId(), 0));
+                        dto.setRatingInitiator(ratingInitiator.getOrDefault(event.getInitiator().getId(), 0));
+                        return dto;
+                    })
+                    .sorted(Comparator.comparingLong(EventShortDto::getRating).reversed())
+                    .toList();
+            case "RATING_USER" -> list = events.getContent()
+                    .stream()
+                    .map(event -> {
+                        EventShortDto dto = EventMapper.mapToEventShortDto(event);
+                        dto.setViews(viewsStats.getOrDefault(event.getId(), 0L));
+                        dto.setRating(ratingEvent.getOrDefault(event.getId(), 0));
+                        dto.setRatingInitiator(ratingInitiator.getOrDefault(event.getInitiator().getId(), 0));
+                        return dto;
+                    })
+                    .sorted(Comparator.comparingLong(EventShortDto::getRatingInitiator).reversed())
+                    .toList();
+            case null -> list = events.getContent()
+                    .stream()
+                    .map(event -> {
+                        EventShortDto dto = EventMapper.mapToEventShortDto(event);
+                        dto.setViews(viewsStats.getOrDefault(event.getId(), 0L));
+                        dto.setRating(ratingEvent.getOrDefault(event.getId(), 0));
+                        dto.setRatingInitiator(ratingInitiator.getOrDefault(event.getInitiator().getId(), 0));
+                        return dto;
+                    })
+                    .toList();
+            default -> {
+                throw new ValidationException("Указан неизвестный тип сортировки");
+            }
+        }
+
+        return list;
     }
 
     @Override
@@ -513,6 +647,54 @@ public class EventServiceImpl implements EventService {
 
         return eventRepository.findAllByCategoryId(catId);
     }
+
+    @Override
+    public int calculateRating(int sumLikes, int sumDislikes) {
+
+        if (sumLikes + sumDislikes == 0) {
+            return 0;
+        }
+        double rating = (double) sumLikes / (sumLikes + sumDislikes) * 10;
+        return (int) Math.round(rating);
+    }
+
+    private int calculateEventRating(List<Rating> ratings) {
+        List<Rating> likes = new ArrayList<>();
+        List<Rating> dislikes = new ArrayList<>();
+
+        for (Rating rating : ratings) {
+            if (rating.getState() == RatingState.LIKE) {
+                likes.add(rating);
+            } else if (rating.getState() == RatingState.DISLIKE) {
+                dislikes.add(rating);
+            }
+        }
+
+        return calculateRating(likes.size(), dislikes.size());
+    }
+
+    private int calculateUserRating(Long userId) {
+
+        List<Event> eventsOfInitiator = eventRepository.findAllByInitiatorId(userId);
+        List<Long> eventIds = eventsOfInitiator.stream().map(Event::getId).toList();
+
+        List<List<Rating>> ratingsOfEvents = ratingRepository.findAllByEventIdIn(eventIds);
+        List<Rating> likes = new ArrayList<>();
+        List<Rating> dislikes = new ArrayList<>();
+        for (List<Rating> r : ratingsOfEvents) {
+
+            for (Rating rating : r) {
+                if (rating.getState() == RatingState.LIKE) {
+                    likes.add(rating);
+                } else if (rating.getState() == RatingState.DISLIKE) {
+                    dislikes.add(rating);
+                }
+            }
+        }
+
+        return calculateRating(likes.size(), dislikes.size());
+    }
+
 
     private void checkId(Long id) {
         if (id == null) {
@@ -541,6 +723,14 @@ public class EventServiceImpl implements EventService {
     private void checkStartAndEnd(LocalDateTime rangeStart, LocalDateTime rangeEnd) {
         if (rangeStart != null && rangeEnd != null && rangeStart.isAfter(rangeEnd)) {
             throw new ValidationException("Дата старта должна быть раньше чем даты окончания");
+        }
+    }
+
+    private void checkSort(String sort) {
+
+        if (sort != null && !sort.equals("EVENT_DATE") && !sort.equals("VIEWS") &&
+                !sort.equals("RATING") && !sort.equals("RATING_USER")) {
+            throw new ValidationException("Указан неизвестный тип сортировки");
         }
     }
 
