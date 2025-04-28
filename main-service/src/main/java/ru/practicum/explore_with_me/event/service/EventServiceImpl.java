@@ -526,7 +526,7 @@ public class EventServiceImpl implements EventService {
                 continue;
             }
 
-            Long eventId = ratingEventsOfInitiators.getFirst().getId();
+            Long eventId = ratingEventsOfInitiators.getFirst().getEvent().getId();
             Map<RatingState, Long> likesAndDislikes = new HashMap<>();
 
             for (Rating rating : ratingEventsOfInitiators) {
@@ -561,7 +561,6 @@ public class EventServiceImpl implements EventService {
             }
             ratingInitiator.put(initiatorId, calculateRating(likes, dislikes));
         }
-
 
         List<EventShortDto> list;
         switch (sort) {
